@@ -1,0 +1,9 @@
+CompileFlags:
+  Add:
+    - -std=c++20
+    - -Ilibs/common/include
+    - -Ilibs/domain/include
+    - -Ilibs/application/include
+    - -Ilibs/runtime/include
+    - -Ilibs/persistence/include
+    - -Itests

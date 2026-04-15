@@ -1,0 +1,6 @@
+add_subdirectory(common)
+add_subdirectory(domain)
+add_subdirectory(application)
+add_subdirectory(runtime)
+add_subdirectory(persistence)
+add_subdirectory(protocol)

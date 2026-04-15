@@ -1,0 +1,24 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dosochka-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dosochka
+      POSTGRES_USER: dosochka
+      POSTGRES_PASSWORD: dosochka
+      POSTGRES_INITDB_ARGS: --auth-host=trust --auth-local=trust
+    ports:
+      - "55000:5432"
+    volumes:
+      - ./sql/000_pg_hba.sh:/docker-entrypoint-initdb.d/000_pg_hba.sh:ro
+      - postgres-data:/var/lib/postgresql/data
+      - ./sql/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dosochka -d dosochka"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:

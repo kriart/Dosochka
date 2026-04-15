@@ -1,0 +1,13 @@
+{
+  "cmake.configureOnOpen": true,
+  "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+  "C_Cpp.default.cppStandard": "c++20",
+  "C_Cpp.default.intelliSenseMode": "windows-msvc-x64",
+  "clangd.enable": false,
+  "cmake.configureEnvironment": {
+    "VSLANG": "1033"
+  },
+  "cmake.buildEnvironment": {
+    "VSLANG": "1033"
+  }
+}
