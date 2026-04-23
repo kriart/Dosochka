@@ -46,6 +46,7 @@ void ClientSession::handle_delete_board(const boost::json::object& payload) {
     }
 
     const auto board_id = json_helpers::parse_id<common::BoardId>(payload, "board_id");
+    auto board_guard = state_.board_access_coordinator().lock_exclusive(board_id);
     auto result = state_.board_service().delete_board(application::DeleteBoardRequest{
         .board_id = board_id,
         .principal = *principal_,
@@ -65,8 +66,10 @@ void ClientSession::handle_join_board(const boost::json::object& payload) {
     }
 
     leave_current_board();
+    const auto board_id = json_helpers::parse_id<common::BoardId>(payload, "board_id");
+    auto board_guard = state_.board_access_coordinator().lock_shared(board_id);
     auto result = state_.board_service().join_board(application::JoinBoardRequest{
-        .board_id = json_helpers::parse_id<common::BoardId>(payload, "board_id"),
+        .board_id = board_id,
         .principal = *principal_,
         .password = json_helpers::optional_string(payload, "password"),
     });
@@ -103,6 +106,7 @@ void ClientSession::handle_operation(const boost::json::object& payload) {
         return;
     }
 
+    auto board_guard = state_.board_access_coordinator().lock_shared(board_id);
     auto result = runtime_->apply_operation(
         *joined_role_,
         domain::OperationCommand{
@@ -185,7 +189,7 @@ void ClientSession::leave_current_board() {
     runtime_.reset();
 }
 
-void ClientSession::on_board_deleted(const common::BoardId& board_id) {
+void ClientSession::handle_board_deleted(const common::BoardId& board_id) {
     if (!joined_board_id_.has_value() || *joined_board_id_ != board_id) {
         return;
     }

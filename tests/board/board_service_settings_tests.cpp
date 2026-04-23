@@ -7,27 +7,40 @@
 
 namespace {
 
-TEST(BoardServiceTests, OwnerCanUpdateBoardSettings) {
-    using namespace online_board;
+using namespace online_board;
 
-    persistence::InMemoryBoardRepository board_repository;
-    persistence::InMemoryBoardMemberRepository member_repository;
-    persistence::InMemoryBoardObjectRepository object_repository;
-    persistence::InMemoryBoardOperationRepository operation_repository;
+struct BoardServiceContext {
+    persistence::SharedInMemoryStorage storage {std::make_shared<persistence::InMemoryStorage>()};
+    persistence::InMemoryBoardRepository board_repository {storage};
+    persistence::InMemoryBoardMemberRepository member_repository {storage};
+    persistence::InMemoryBoardObjectRepository object_repository {storage};
+    persistence::InMemoryBoardOperationRepository operation_repository {storage};
+    persistence::InMemoryBoardLifecyclePersistence lifecycle_persistence {storage};
     application::BoardAccessService access_service;
     SequentialIdGenerator id_generator;
     FakePasswordHasher hasher;
     FakeClock clock;
+    application::BoardService service;
 
-    application::BoardService service(
-        board_repository,
-        member_repository,
-        object_repository,
-        operation_repository,
-        access_service,
-        id_generator,
-        hasher,
-        clock);
+    BoardServiceContext()
+        : service(
+              board_repository,
+              member_repository,
+              object_repository,
+              operation_repository,
+              lifecycle_persistence,
+              access_service,
+              id_generator,
+              hasher,
+              clock) {
+    }
+};
+
+TEST(BoardServiceTests, OwnerCanUpdateBoardSettings) {
+    using namespace online_board;
+
+    BoardServiceContext context;
+    auto& service = context.service;
 
     auto create_result = service.create_board({
         .principal = domain::RegisteredUserPrincipal{.user_id = common::UserId{"owner-1"}},
@@ -59,24 +72,8 @@ TEST(BoardServiceTests, OwnerCanUpdateBoardSettings) {
 TEST(BoardServiceTests, EditorCannotUpdateBoardSettings) {
     using namespace online_board;
 
-    persistence::InMemoryBoardRepository board_repository;
-    persistence::InMemoryBoardMemberRepository member_repository;
-    persistence::InMemoryBoardObjectRepository object_repository;
-    persistence::InMemoryBoardOperationRepository operation_repository;
-    application::BoardAccessService access_service;
-    SequentialIdGenerator id_generator;
-    FakePasswordHasher hasher;
-    FakeClock clock;
-
-    application::BoardService service(
-        board_repository,
-        member_repository,
-        object_repository,
-        operation_repository,
-        access_service,
-        id_generator,
-        hasher,
-        clock);
+    BoardServiceContext context;
+    auto& service = context.service;
 
     auto create_result = service.create_board({
         .principal = domain::RegisteredUserPrincipal{.user_id = common::UserId{"owner-1"}},
@@ -108,24 +105,8 @@ TEST(BoardServiceTests, EditorCannotUpdateBoardSettings) {
 TEST(BoardServiceTests, CreateBoardRejectsContradictoryAccessSettings) {
     using namespace online_board;
 
-    persistence::InMemoryBoardRepository board_repository;
-    persistence::InMemoryBoardMemberRepository member_repository;
-    persistence::InMemoryBoardObjectRepository object_repository;
-    persistence::InMemoryBoardOperationRepository operation_repository;
-    application::BoardAccessService access_service;
-    SequentialIdGenerator id_generator;
-    FakePasswordHasher hasher;
-    FakeClock clock;
-
-    application::BoardService service(
-        board_repository,
-        member_repository,
-        object_repository,
-        operation_repository,
-        access_service,
-        id_generator,
-        hasher,
-        clock);
+    BoardServiceContext context;
+    auto& service = context.service;
 
     auto create_result = service.create_board({
         .principal = domain::RegisteredUserPrincipal{.user_id = common::UserId{"owner-1"}},
@@ -141,24 +122,8 @@ TEST(BoardServiceTests, CreateBoardRejectsContradictoryAccessSettings) {
 TEST(BoardServiceTests, CreateBoardRejectsPasswordProtectedBoardWithoutPassword) {
     using namespace online_board;
 
-    persistence::InMemoryBoardRepository board_repository;
-    persistence::InMemoryBoardMemberRepository member_repository;
-    persistence::InMemoryBoardObjectRepository object_repository;
-    persistence::InMemoryBoardOperationRepository operation_repository;
-    application::BoardAccessService access_service;
-    SequentialIdGenerator id_generator;
-    FakePasswordHasher hasher;
-    FakeClock clock;
-
-    application::BoardService service(
-        board_repository,
-        member_repository,
-        object_repository,
-        operation_repository,
-        access_service,
-        id_generator,
-        hasher,
-        clock);
+    BoardServiceContext context;
+    auto& service = context.service;
 
     auto create_result = service.create_board({
         .principal = domain::RegisteredUserPrincipal{.user_id = common::UserId{"owner-1"}},
@@ -174,24 +139,8 @@ TEST(BoardServiceTests, CreateBoardRejectsPasswordProtectedBoardWithoutPassword)
 TEST(BoardServiceTests, UpdateBoardSettingsRejectsPasswordPayloadWithoutChangeFlag) {
     using namespace online_board;
 
-    persistence::InMemoryBoardRepository board_repository;
-    persistence::InMemoryBoardMemberRepository member_repository;
-    persistence::InMemoryBoardObjectRepository object_repository;
-    persistence::InMemoryBoardOperationRepository operation_repository;
-    application::BoardAccessService access_service;
-    SequentialIdGenerator id_generator;
-    FakePasswordHasher hasher;
-    FakeClock clock;
-
-    application::BoardService service(
-        board_repository,
-        member_repository,
-        object_repository,
-        operation_repository,
-        access_service,
-        id_generator,
-        hasher,
-        clock);
+    BoardServiceContext context;
+    auto& service = context.service;
 
     auto create_result = service.create_board({
         .principal = domain::RegisteredUserPrincipal{.user_id = common::UserId{"owner-1"}},
@@ -215,24 +164,8 @@ TEST(BoardServiceTests, UpdateBoardSettingsRejectsPasswordPayloadWithoutChangeFl
 TEST(BoardServiceTests, UpdateBoardSettingsClearsGuestPolicyAndPasswordWhenBoardStopsBeingProtected) {
     using namespace online_board;
 
-    persistence::InMemoryBoardRepository board_repository;
-    persistence::InMemoryBoardMemberRepository member_repository;
-    persistence::InMemoryBoardObjectRepository object_repository;
-    persistence::InMemoryBoardOperationRepository operation_repository;
-    application::BoardAccessService access_service;
-    SequentialIdGenerator id_generator;
-    FakePasswordHasher hasher;
-    FakeClock clock;
-
-    application::BoardService service(
-        board_repository,
-        member_repository,
-        object_repository,
-        operation_repository,
-        access_service,
-        id_generator,
-        hasher,
-        clock);
+    BoardServiceContext context;
+    auto& service = context.service;
 
     auto create_result = service.create_board({
         .principal = domain::RegisteredUserPrincipal{.user_id = common::UserId{"owner-1"}},
@@ -259,24 +192,8 @@ TEST(BoardServiceTests, UpdateBoardSettingsClearsGuestPolicyAndPasswordWhenBoard
 TEST(BoardServiceTests, UpdateBoardSettingsRejectsGuestEnableOnPrivateBoard) {
     using namespace online_board;
 
-    persistence::InMemoryBoardRepository board_repository;
-    persistence::InMemoryBoardMemberRepository member_repository;
-    persistence::InMemoryBoardObjectRepository object_repository;
-    persistence::InMemoryBoardOperationRepository operation_repository;
-    application::BoardAccessService access_service;
-    SequentialIdGenerator id_generator;
-    FakePasswordHasher hasher;
-    FakeClock clock;
-
-    application::BoardService service(
-        board_repository,
-        member_repository,
-        object_repository,
-        operation_repository,
-        access_service,
-        id_generator,
-        hasher,
-        clock);
+    BoardServiceContext context;
+    auto& service = context.service;
 
     auto create_result = service.create_board({
         .principal = domain::RegisteredUserPrincipal{.user_id = common::UserId{"owner-1"}},

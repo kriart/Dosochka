@@ -9,6 +9,7 @@ if(Boost_FOUND AND TARGET Boost::asio AND TARGET Boost::json AND TARGET Boost::s
         src/session/client_session_dispatch.cpp
         src/session/client_session_io.cpp
         src/main.cpp
+        src/core/board_access_coordinator.cpp
         src/core/server_state.cpp
         src/transport/json_tcp_server.cpp
     )

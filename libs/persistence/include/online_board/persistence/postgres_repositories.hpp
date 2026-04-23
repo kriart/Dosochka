@@ -1,5 +1,6 @@
 #pragma once
 
+#include "online_board/persistence/postgres/postgres_board_lifecycle_persistence.hpp"
 #include "online_board/persistence/postgres/postgres_board_member_repository.hpp"
 #include "online_board/persistence/postgres/postgres_board_object_repository.hpp"
 #include "online_board/persistence/postgres/postgres_board_operation_repository.hpp"

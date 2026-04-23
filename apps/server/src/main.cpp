@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <csignal>
 #include <cstdlib>
 #include <iostream>
 #include <string>
@@ -24,6 +25,18 @@ int main(int argc, char* argv[]) {
             io_context,
             boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), port),
             std::move(persistence_config));
+
+        boost::asio::signal_set signals(io_context, SIGINT, SIGTERM);
+#ifdef SIGBREAK
+        signals.add(SIGBREAK);
+#endif
+        signals.async_wait([&server](const boost::system::error_code& error, int signal_number) {
+            if (error) {
+                return;
+            }
+            std::cout << "Shutdown requested by signal " << signal_number << std::endl;
+            server.stop();
+        });
 
         const auto worker_count = std::max(2u, std::thread::hardware_concurrency());
         std::vector<std::thread> workers;

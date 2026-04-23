@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <shared_mutex>
 
 #include "online_board/application/services/board_access_service.hpp"
 #include "online_board/application/dto.hpp"
@@ -18,6 +19,7 @@ public:
         IBoardMemberRepository& member_repository,
         IBoardObjectRepository& object_repository,
         IBoardOperationRepository& operation_repository,
+        IBoardLifecyclePersistence& lifecycle_persistence,
         const BoardAccessService& access_service,
         const IIdGenerator& id_generator,
         const IPasswordHasher& password_hasher,
@@ -55,10 +57,12 @@ private:
     IBoardMemberRepository& member_repository_;
     IBoardObjectRepository& object_repository_;
     IBoardOperationRepository& operation_repository_;
+    IBoardLifecyclePersistence& lifecycle_persistence_;
     const BoardAccessService& access_service_;
     const IIdGenerator& id_generator_;
     const IPasswordHasher& password_hasher_;
     const common::IClock& clock_;
+    mutable std::shared_mutex mutex_;
 };
 
 }  // namespace online_board::application

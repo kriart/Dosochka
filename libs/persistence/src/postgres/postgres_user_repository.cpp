@@ -1,5 +1,7 @@
 #include "online_board/persistence/postgres/postgres_user_repository.hpp"
 
+#include <stdexcept>
+#include <string_view>
 #include <utility>
 
 #include "postgres_repository_utils.hpp"
@@ -32,6 +34,41 @@ std::optional<domain::User> PostgresUserRepository::find_by_login(const std::str
     return map_optional_single_row<domain::User>(result.get(), [&](int row) {
         return user_from_result(result.get(), row);
     });
+}
+
+common::Result<std::monostate> PostgresUserRepository::create(domain::User user) {
+    auto connection = connection_provider_->open();
+    const auto values = param_values({
+        user.id.value,
+        user.login,
+        user.display_name,
+        user.password_hash,
+        std::to_string(postgres_json::to_unix_millis(user.created_at)),
+    });
+    auto result = make_result(PQexecParams(
+        connection->get(),
+        "INSERT INTO users (id, login, display_name, password_hash, created_at_ms) "
+        "VALUES ($1, $2, $3, $4, $5)",
+        static_cast<int>(values.size()),
+        nullptr,
+        values.data(),
+        nullptr,
+        nullptr,
+        0));
+
+    const auto status = PQresultStatus(result.get());
+    if (status == PGRES_COMMAND_OK) {
+        return std::monostate{};
+    }
+
+    const auto* sql_state = PQresultErrorField(result.get(), PG_DIAG_SQLSTATE);
+    if (sql_state != nullptr && std::string_view(sql_state) == "23505") {
+        return common::fail<std::monostate>(
+            common::ErrorCode::already_exists,
+            "Login is already taken");
+    }
+
+    throw std::runtime_error(PQresultErrorMessage(result.get()));
 }
 
 void PostgresUserRepository::save(domain::User user) {

@@ -17,6 +17,8 @@ public:
 
     std::optional<domain::User> find_by_login(const std::string& login) const override;
 
+    common::Result<std::monostate> create(domain::User user) override;
+
     void save(domain::User user) override;
 
 private:

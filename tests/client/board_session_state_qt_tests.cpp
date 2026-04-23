@@ -1,7 +1,14 @@
 #include <QtTest/QtTest>
 
+#include <QMenu>
+#include <QSlider>
+#include <QToolButton>
+
+#include "board_canvas_scene_growth.hpp"
 #include "board_canvas_widget.hpp"
+#include "board_participants_view.hpp"
 #include "board_session_state.hpp"
+#include "board_tool_panel.hpp"
 
 namespace online_board::client_qt {
 
@@ -12,6 +19,10 @@ private slots:
     void DifferentClientStatesGenerateDistinctObjectIdsOnSameBoard();
     void EraserHitTestReturnsTopmostObject();
     void EraserDragRequestsDeletionForEachTouchedObject();
+    void ViewerRoleDoesNotEmitEditCallbacks();
+    void ParticipantsViewUpdatesSummaryAndPopupEntries();
+    void ToolPanelReflectsSelectedToolAndEnabledState();
+    void SceneGrowthLockPreventsRepeatedExpansionUntilTargetLeavesEdge();
 };
 
 void BoardSessionStateQtTests::DifferentClientStatesGenerateDistinctObjectIdsOnSameBoard() {
@@ -153,6 +164,104 @@ void BoardSessionStateQtTests::EraserDragRequestsDeletionForEachTouchedObject() 
     QCOMPARE(erased.size(), 2);
     QCOMPARE(erased.at(0), QStringLiteral("shape-left"));
     QCOMPARE(erased.at(1), QStringLiteral("shape-right"));
+}
+
+void BoardSessionStateQtTests::ViewerRoleDoesNotEmitEditCallbacks() {
+    BoardCanvasWidget canvas;
+    canvas.resize(320, 240);
+    canvas.set_role(domain::BoardRole::viewer);
+    canvas.set_tool(BoardCanvasWidget::Tool::rectangle);
+    canvas.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&canvas));
+
+    bool rectangle_created = false;
+    canvas.on_rectangle_created = [&rectangle_created](const QRectF&) {
+        rectangle_created = true;
+    };
+
+    const QPoint start = canvas.mapFromScene(QPointF(40.0, 40.0));
+    const QPoint finish = canvas.mapFromScene(QPointF(160.0, 140.0));
+
+    QTest::mousePress(canvas.viewport(), Qt::LeftButton, Qt::NoModifier, start);
+    QTest::mouseMove(canvas.viewport(), finish, 10);
+    QTest::mouseRelease(canvas.viewport(), Qt::LeftButton, Qt::NoModifier, finish);
+
+    QVERIFY(!rectangle_created);
+}
+
+void BoardSessionStateQtTests::ParticipantsViewUpdatesSummaryAndPopupEntries() {
+    BoardParticipantsView view;
+
+    auto* summary_button = view.findChild<QToolButton*>(QStringLiteral("participantsSummaryButton"));
+    QVERIFY(summary_button != nullptr);
+    QVERIFY(summary_button->menu() != nullptr);
+
+    QCOMPARE(summary_button->text(), QStringLiteral("0 online"));
+    QVERIFY(!summary_button->isEnabled());
+    QCOMPARE(summary_button->toolTip(), QStringLiteral("No active participants"));
+    QCOMPARE(summary_button->menu()->actions().size(), 1);
+    QCOMPARE(summary_button->menu()->actions().front()->text(), QStringLiteral("No active participants"));
+    QVERIFY(!summary_button->menu()->actions().front()->isEnabled());
+
+    view.set_entries({QStringLiteral("Owner"), QStringLiteral("Guest One")});
+
+    QCOMPARE(summary_button->text(), QStringLiteral("2 online"));
+    QVERIFY(summary_button->isEnabled());
+    QCOMPARE(summary_button->toolTip(), QStringLiteral("Owner\nGuest One"));
+    QCOMPARE(summary_button->menu()->actions().size(), 2);
+    QCOMPARE(summary_button->menu()->actions().at(0)->text(), QStringLiteral("Owner"));
+    QCOMPARE(summary_button->menu()->actions().at(1)->text(), QStringLiteral("Guest One"));
+    QVERIFY(!summary_button->menu()->actions().at(0)->isEnabled());
+    QVERIFY(!summary_button->menu()->actions().at(1)->isEnabled());
+}
+
+void BoardSessionStateQtTests::ToolPanelReflectsSelectedToolAndEnabledState() {
+    BoardToolPanel panel;
+
+    panel.set_active_tool(BoardCanvasWidget::Tool::text);
+    QVERIFY(!panel.pen_button()->isChecked());
+    QVERIFY(!panel.rectangle_button()->isChecked());
+    QVERIFY(panel.text_button()->isChecked());
+    QVERIFY(!panel.eraser_button()->isChecked());
+
+    panel.set_controls_enabled(false);
+    QVERIFY(!panel.pen_button()->isEnabled());
+    QVERIFY(!panel.rectangle_button()->isEnabled());
+    QVERIFY(!panel.text_button()->isEnabled());
+    QVERIFY(!panel.eraser_button()->isEnabled());
+    QVERIFY(!panel.color_button()->isEnabled());
+    QVERIFY(!panel.zoom_in_button()->isEnabled());
+    QVERIFY(!panel.zoom_out_button()->isEnabled());
+    QVERIFY(!panel.reset_view_button()->isEnabled());
+    QVERIFY(!panel.stroke_width_slider()->isEnabled());
+
+    panel.set_controls_enabled(true);
+    panel.set_stroke_width(7);
+    QCOMPARE(panel.stroke_width(), 7);
+    QCOMPARE(panel.stroke_width_slider()->value(), 7);
+}
+
+void BoardSessionStateQtTests::SceneGrowthLockPreventsRepeatedExpansionUntilTargetLeavesEdge() {
+    BoardCanvasGrowthLocks locks;
+    const auto initial_rect = initial_board_scene_rect();
+    const QRectF near_right_edge(initial_rect.right() - 10.0, 0.0, 1.0, 1.0);
+
+    const auto expanded_once = expand_scene_rect_for_target(initial_rect, near_right_edge, locks);
+    QVERIFY(expanded_once.has_value());
+    QVERIFY(expanded_once->right() > initial_rect.right());
+
+    const QRectF still_near_new_right_edge(expanded_once->right() - 10.0, 0.0, 1.0, 1.0);
+    const auto repeated = expand_scene_rect_for_target(*expanded_once, still_near_new_right_edge, locks);
+    QVERIFY(!repeated.has_value());
+
+    const QRectF away_from_right_edge(expanded_once->center(), QSizeF(1.0, 1.0));
+    const auto away = expand_scene_rect_for_target(*expanded_once, away_from_right_edge, locks);
+    QVERIFY(!away.has_value());
+
+    const QRectF near_right_edge_again(expanded_once->right() - 10.0, 0.0, 1.0, 1.0);
+    const auto expanded_again = expand_scene_rect_for_target(*expanded_once, near_right_edge_again, locks);
+    QVERIFY(expanded_again.has_value());
+    QVERIFY(expanded_again->right() > expanded_once->right());
 }
 
 }  // namespace online_board::client_qt

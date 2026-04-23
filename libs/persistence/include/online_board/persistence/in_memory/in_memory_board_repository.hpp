@@ -1,32 +1,43 @@
 #pragma once
 
-#include <map>
 #include <utility>
 
 #include "online_board/application/repository_interfaces.hpp"
+#include "online_board/persistence/in_memory/in_memory_storage.hpp"
 
 namespace online_board::persistence {
 
 class InMemoryBoardRepository final : public application::IBoardRepository {
 public:
+    InMemoryBoardRepository()
+        : storage_(std::make_shared<InMemoryStorage>()) {
+    }
+
+    explicit InMemoryBoardRepository(SharedInMemoryStorage storage)
+        : storage_(std::move(storage)) {
+    }
+
     std::optional<domain::Board> find_by_id(const common::BoardId& board_id) const override {
-        auto it = boards_.find(board_id);
-        if (it == boards_.end()) {
+        std::lock_guard<std::mutex> lock(storage_->mutex);
+        auto it = storage_->boards.find(board_id);
+        if (it == storage_->boards.end()) {
             return std::nullopt;
         }
         return it->second;
     }
 
     void save(domain::Board board) override {
-        boards_[board.id] = std::move(board);
+        std::lock_guard<std::mutex> lock(storage_->mutex);
+        storage_->boards[board.id] = std::move(board);
     }
 
     bool remove(const common::BoardId& board_id) override {
-        return boards_.erase(board_id) > 0;
+        std::lock_guard<std::mutex> lock(storage_->mutex);
+        return storage_->boards.erase(board_id) > 0;
     }
 
 private:
-    std::map<common::BoardId, domain::Board> boards_;
+    SharedInMemoryStorage storage_;
 };
 
 }  // namespace online_board::persistence

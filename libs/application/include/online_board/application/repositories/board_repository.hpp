@@ -5,8 +5,10 @@
 #include <variant>
 #include <vector>
 
+#include "online_board/common/ids.hpp"
 #include "online_board/domain/operations/applied_operation.hpp"
 #include "online_board/domain/board/board.hpp"
+#include "online_board/domain/board/board_member.hpp"
 #include "online_board/domain/board/board_object.hpp"
 #include "online_board/common/result.hpp"
 
@@ -47,6 +49,25 @@ struct IBoardOperationRepository {
         const common::BoardId& board_id) const = 0;
     virtual void append(domain::AppliedOperation operation) = 0;
     virtual void remove_board(const common::BoardId& board_id) = 0;
+};
+
+struct IBoardLifecyclePersistence {
+    virtual ~IBoardLifecyclePersistence() = default;
+
+    virtual common::Result<std::monostate> create_board_with_owner(
+        const domain::Board& board,
+        const domain::BoardMember& owner_member) = 0;
+
+    virtual common::Result<bool> upsert_member_and_touch_board(
+        const domain::Board& board,
+        const domain::BoardMember& member) = 0;
+
+    virtual common::Result<bool> remove_member_and_touch_board(
+        const domain::Board& board,
+        const common::UserId& user_id) = 0;
+
+    virtual common::Result<bool> delete_board_cascade(
+        const common::BoardId& board_id) = 0;
 };
 
 struct IBoardRuntimePersistence {

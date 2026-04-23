@@ -56,6 +56,7 @@ BoardService::BoardService(
     IBoardMemberRepository& member_repository,
     IBoardObjectRepository& object_repository,
     IBoardOperationRepository& operation_repository,
+    IBoardLifecyclePersistence& lifecycle_persistence,
     const BoardAccessService& access_service,
     const IIdGenerator& id_generator,
     const IPasswordHasher& password_hasher,
@@ -64,6 +65,7 @@ BoardService::BoardService(
       member_repository_(member_repository),
       object_repository_(object_repository),
       operation_repository_(operation_repository),
+      lifecycle_persistence_(lifecycle_persistence),
       access_service_(access_service),
       id_generator_(id_generator),
       password_hasher_(password_hasher),
@@ -71,6 +73,7 @@ BoardService::BoardService(
 }
 
 common::Result<CreateBoardResponse> BoardService::create_board(const CreateBoardRequest& request) {
+    std::unique_lock lock(mutex_);
     if (!access_service_.can_create_board(request.principal)) {
         return common::fail<CreateBoardResponse>(
             common::ErrorCode::access_denied,
@@ -97,20 +100,23 @@ common::Result<CreateBoardResponse> BoardService::create_board(const CreateBoard
         .created_at = now,
         .updated_at = now,
     };
-    board_repository_.save(board);
-
-    member_repository_.save(domain::BoardMember{
+    domain::BoardMember owner_member{
         .board_id = board.id,
         .user_id = owner.user_id,
         .role = domain::BoardRole::owner,
         .created_at = now,
-    });
-    object_repository_.replace_for_board(board.id, {});
+    };
+
+    const auto persistence_result = lifecycle_persistence_.create_board_with_owner(board, owner_member);
+    if (!common::is_ok(persistence_result)) {
+        return common::error(persistence_result);
+    }
 
     return CreateBoardResponse{.board = std::move(board)};
 }
 
 common::Result<ListUserBoardsResponse> BoardService::list_user_boards(const ListUserBoardsRequest& request) const {
+    std::shared_lock lock(mutex_);
     const auto* user = std::get_if<domain::RegisteredUserPrincipal>(&request.principal);
     if (user == nullptr) {
         return ListUserBoardsResponse{.boards = {}};
@@ -146,6 +152,7 @@ common::Result<ListUserBoardsResponse> BoardService::list_user_boards(const List
 
 common::Result<UpdateBoardSettingsResponse> BoardService::update_board_settings(
     const UpdateBoardSettingsRequest& request) {
+    std::unique_lock lock(mutex_);
     const auto board = board_repository_.find_by_id(request.board_id);
     if (!board.has_value()) {
         return common::fail<UpdateBoardSettingsResponse>(
@@ -219,6 +226,7 @@ common::Result<UpdateBoardSettingsResponse> BoardService::update_board_settings(
 
 common::Result<UpsertBoardMemberResponse> BoardService::upsert_board_member(
     const UpsertBoardMemberRequest& request) {
+    std::unique_lock lock(mutex_);
     const auto board = board_repository_.find_by_id(request.board_id);
     if (!board.has_value()) {
         return common::fail<UpsertBoardMemberResponse>(
@@ -251,17 +259,25 @@ common::Result<UpsertBoardMemberResponse> BoardService::upsert_board_member(
         .role = request.role,
         .created_at = now,
     };
-    member_repository_.save(member);
 
     auto updated_board = *board;
     updated_board.updated_at = now;
-    board_repository_.save(updated_board);
+    const auto persistence_result = lifecycle_persistence_.upsert_member_and_touch_board(updated_board, member);
+    if (!common::is_ok(persistence_result)) {
+        return common::error(persistence_result);
+    }
+    if (!common::value(persistence_result)) {
+        return common::fail<UpsertBoardMemberResponse>(
+            common::ErrorCode::not_found,
+            "Board was not found");
+    }
 
     return UpsertBoardMemberResponse{.member = std::move(member)};
 }
 
 common::Result<ListBoardMembersResponse> BoardService::list_board_members(
     const ListBoardMembersRequest& request) const {
+    std::shared_lock lock(mutex_);
     const auto board = board_repository_.find_by_id(request.board_id);
     if (!board.has_value()) {
         return common::fail<ListBoardMembersResponse>(
@@ -290,6 +306,7 @@ common::Result<ListBoardMembersResponse> BoardService::list_board_members(
 
 common::Result<RemoveBoardMemberResponse> BoardService::remove_board_member(
     const RemoveBoardMemberRequest& request) {
+    std::unique_lock lock(mutex_);
     const auto board = board_repository_.find_by_id(request.board_id);
     if (!board.has_value()) {
         return common::fail<RemoveBoardMemberResponse>(
@@ -309,15 +326,20 @@ common::Result<RemoveBoardMemberResponse> BoardService::remove_board_member(
             common::ErrorCode::invalid_argument,
             "Board owner cannot be removed from membership");
     }
-    if (!member_repository_.remove_member(request.board_id, request.target_user_id)) {
+
+    auto updated_board = *board;
+    updated_board.updated_at = clock_.now();
+    const auto persistence_result = lifecycle_persistence_.remove_member_and_touch_board(
+        updated_board,
+        request.target_user_id);
+    if (!common::is_ok(persistence_result)) {
+        return common::error(persistence_result);
+    }
+    if (!common::value(persistence_result)) {
         return common::fail<RemoveBoardMemberResponse>(
             common::ErrorCode::not_found,
             "Board member was not found");
     }
-
-    auto updated_board = *board;
-    updated_board.updated_at = clock_.now();
-    board_repository_.save(updated_board);
 
     return RemoveBoardMemberResponse{
         .board_id = request.board_id,
@@ -326,6 +348,7 @@ common::Result<RemoveBoardMemberResponse> BoardService::remove_board_member(
 }
 
 common::Result<DeleteBoardResponse> BoardService::delete_board(const DeleteBoardRequest& request) {
+    std::unique_lock lock(mutex_);
     const auto board = board_repository_.find_by_id(request.board_id);
     if (!board.has_value()) {
         return common::fail<DeleteBoardResponse>(
@@ -341,10 +364,11 @@ common::Result<DeleteBoardResponse> BoardService::delete_board(const DeleteBoard
             "Only board owner can delete the board");
     }
 
-    member_repository_.remove_board(request.board_id);
-    object_repository_.remove_board(request.board_id);
-    operation_repository_.remove_board(request.board_id);
-    if (!board_repository_.remove(request.board_id)) {
+    const auto persistence_result = lifecycle_persistence_.delete_board_cascade(request.board_id);
+    if (!common::is_ok(persistence_result)) {
+        return common::error(persistence_result);
+    }
+    if (!common::value(persistence_result)) {
         return common::fail<DeleteBoardResponse>(
             common::ErrorCode::not_found,
             "Board was not found");
@@ -354,6 +378,7 @@ common::Result<DeleteBoardResponse> BoardService::delete_board(const DeleteBoard
 }
 
 common::Result<JoinBoardResponse> BoardService::join_board(const JoinBoardRequest& request) const {
+    std::shared_lock lock(mutex_);
     const auto board = board_repository_.find_by_id(request.board_id);
     if (!board.has_value()) {
         return common::fail<JoinBoardResponse>(
@@ -387,6 +412,7 @@ common::Result<JoinBoardResponse> BoardService::join_board(const JoinBoardReques
 }
 
 common::Result<domain::BoardSnapshot> BoardService::load_snapshot(const common::BoardId& board_id) const {
+    std::shared_lock lock(mutex_);
     const auto board = board_repository_.find_by_id(board_id);
     if (!board.has_value()) {
         return common::fail<domain::BoardSnapshot>(

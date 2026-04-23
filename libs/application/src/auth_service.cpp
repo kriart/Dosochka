@@ -21,12 +21,7 @@ AuthService::AuthService(
 }
 
 common::Result<RegisterUserResponse> AuthService::register_user(const RegisterUserRequest& request) {
-    if (user_repository_.find_by_login(request.login).has_value()) {
-        return common::fail<RegisterUserResponse>(
-            common::ErrorCode::already_exists,
-            "Login is already taken");
-    }
-
+    std::unique_lock lock(mutex_);
     const auto now = clock_.now();
     domain::User user{
         .id = common::UserId{id_generator_.next_id()},
@@ -35,7 +30,10 @@ common::Result<RegisterUserResponse> AuthService::register_user(const RegisterUs
         .password_hash = password_hasher_.hash(request.password),
         .created_at = now,
     };
-    user_repository_.save(user);
+    const auto create_result = user_repository_.create(user);
+    if (!common::is_ok(create_result)) {
+        return common::error(create_result);
+    }
 
     const auto raw_token = token_generator_.next_token();
     domain::AuthSession session{
@@ -55,6 +53,7 @@ common::Result<RegisterUserResponse> AuthService::register_user(const RegisterUs
 }
 
 common::Result<LoginResponse> AuthService::login(const LoginRequest& request) {
+    std::unique_lock lock(mutex_);
     const auto user = user_repository_.find_by_login(request.login);
     if (!user.has_value()) {
         return common::fail<LoginResponse>(
@@ -86,6 +85,7 @@ common::Result<LoginResponse> AuthService::login(const LoginRequest& request) {
 }
 
 common::Result<GuestEnterResponse> AuthService::enter_guest(const GuestEnterRequest& request) {
+    std::unique_lock lock(mutex_);
     if (request.nickname.empty()) {
         return common::fail<GuestEnterResponse>(
             common::ErrorCode::invalid_argument,
@@ -110,6 +110,7 @@ common::Result<GuestEnterResponse> AuthService::enter_guest(const GuestEnterRequ
 }
 
 common::Result<domain::AuthSession> AuthService::restore_session(const std::string& raw_token) const {
+    std::shared_lock lock(mutex_);
     const auto session = session_repository_.find_auth_session_by_token_hash(password_hasher_.hash(raw_token));
     if (!session.has_value()) {
         return common::fail<domain::AuthSession>(

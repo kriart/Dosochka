@@ -8,6 +8,7 @@ target_link_libraries(online_board_persistence INTERFACE
 
 if(PostgreSQL_FOUND AND TARGET Boost::json)
     add_library(online_board_persistence_postgres
+        src/postgres/postgres_board_lifecycle_persistence.cpp
         src/postgres/postgres_board_member_repository.cpp
         src/postgres/postgres_board_object_repository.cpp
         src/postgres/postgres_board_operation_repository.cpp

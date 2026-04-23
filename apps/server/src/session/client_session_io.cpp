@@ -49,8 +49,13 @@ void ClientSession::do_write() {
 }
 
 void ClientSession::cleanup() {
+    if (stopped_) {
+        return;
+    }
+    stopped_ = true;
     leave_current_board();
     boost::system::error_code ignored;
+    socket_.cancel(ignored);
     socket_.close(ignored);
 }
 

@@ -14,6 +14,14 @@ void ClientSession::start() {
     do_read();
 }
 
+void ClientSession::stop() {
+    boost::asio::post(
+        strand_,
+        [self = shared_from_this()]() {
+            self->cleanup();
+        });
+}
+
 void ClientSession::send_json(std::string json_message) {
     boost::asio::post(
         strand_,
@@ -24,6 +32,14 @@ void ClientSession::send_json(std::string json_message) {
             if (needs_write) {
                 self->do_write();
             }
+        });
+}
+
+void ClientSession::on_board_deleted(const common::BoardId& board_id) {
+    boost::asio::post(
+        strand_,
+        [self = shared_from_this(), board_id]() {
+            self->handle_board_deleted(board_id);
         });
 }
 

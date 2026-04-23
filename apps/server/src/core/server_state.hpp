@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "board_access_coordinator.hpp"
 #include "online_board/application/services/auth_service.hpp"
 #include "online_board/application/services/board_access_service.hpp"
 #include "online_board/application/services/board_service.hpp"
@@ -50,6 +51,7 @@ public:
     [[nodiscard]] application::IBoardMemberRepository& board_member_repository() noexcept;
     [[nodiscard]] application::IBoardObjectRepository& board_object_repository() noexcept;
     [[nodiscard]] application::IBoardOperationRepository& board_operation_repository() noexcept;
+    [[nodiscard]] application::IBoardLifecyclePersistence& board_lifecycle_persistence() noexcept;
     [[nodiscard]] application::IBoardRuntimePersistence& board_runtime_persistence() noexcept;
     [[nodiscard]] common::SystemClock& clock() noexcept;
     [[nodiscard]] application::AuthService& auth_service() noexcept;
@@ -57,17 +59,20 @@ public:
     [[nodiscard]] application::OperationService& operation_service() noexcept;
     [[nodiscard]] application::PresenceService& presence_service() noexcept;
     [[nodiscard]] runtime::BoardRegistry& board_registry() noexcept;
+    [[nodiscard]] BoardAccessCoordinator& board_access_coordinator() noexcept;
 
 private:
 #ifdef ONLINE_BOARD_HAS_POSTGRES
     persistence::SharedPostgresConnectionProvider postgres_connection_provider_;
 #endif
+    persistence::SharedInMemoryStorage in_memory_storage_;
     std::unique_ptr<application::IUserRepository> user_repository_;
     std::unique_ptr<application::ISessionRepository> session_repository_;
     std::unique_ptr<application::IBoardRepository> board_repository_;
     std::unique_ptr<application::IBoardMemberRepository> board_member_repository_;
     std::unique_ptr<application::IBoardObjectRepository> board_object_repository_;
     std::unique_ptr<application::IBoardOperationRepository> board_operation_repository_;
+    std::unique_ptr<application::IBoardLifecyclePersistence> board_lifecycle_persistence_;
     std::unique_ptr<application::IBoardRuntimePersistence> board_runtime_persistence_;
     common::SystemClock clock_;
     SimplePasswordHasher password_hasher_;
@@ -80,6 +85,7 @@ private:
     application::OperationService operation_service_;
     application::BoardService board_service_;
     runtime::BoardRegistry board_registry_;
+    BoardAccessCoordinator board_access_coordinator_;
 
     std::mutex subscriptions_mutex_;
     std::unordered_map<std::string, std::vector<std::weak_ptr<ClientSession>>> subscriptions_;

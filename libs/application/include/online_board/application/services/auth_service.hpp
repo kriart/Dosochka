@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <shared_mutex>
 
 #include "online_board/application/dto.hpp"
 #include "online_board/application/repository_interfaces.hpp"
@@ -31,6 +32,7 @@ private:
     ITokenGenerator& token_generator_;
     const IIdGenerator& id_generator_;
     const common::IClock& clock_;
+    mutable std::shared_mutex mutex_;
 };
 
 }  // namespace online_board::application

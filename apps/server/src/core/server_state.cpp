@@ -7,111 +7,74 @@
 
 namespace online_board::server {
 
-namespace {
-
-#ifdef ONLINE_BOARD_HAS_POSTGRES
-template <typename Interface, typename InMemoryRepository, typename PostgresRepository>
-std::unique_ptr<Interface> make_repository(
-    const ServerPersistenceConfig& config,
-    const persistence::SharedPostgresConnectionProvider& postgres_connection_provider) {
-    if (config.backend == PersistenceBackend::postgres) {
-        return std::make_unique<PostgresRepository>(postgres_connection_provider);
-    }
-    return std::make_unique<InMemoryRepository>();
-}
-
-std::unique_ptr<application::IBoardRuntimePersistence> make_runtime_persistence(
-    const ServerPersistenceConfig& config,
-    const persistence::SharedPostgresConnectionProvider& postgres_connection_provider,
-    application::IBoardRepository& board_repository,
-    application::IBoardObjectRepository& object_repository,
-    application::IBoardOperationRepository& operation_repository) {
-    if (config.backend == PersistenceBackend::postgres) {
-        return std::make_unique<persistence::PostgresBoardRuntimePersistence>(postgres_connection_provider);
-    }
-    return std::make_unique<persistence::InMemoryBoardRuntimePersistence>(
-        board_repository,
-        object_repository,
-        operation_repository);
-}
-#else
-template <typename Interface, typename InMemoryRepository>
-std::unique_ptr<Interface> make_repository(const ServerPersistenceConfig& config) {
-    if (config.backend == PersistenceBackend::postgres) {
-        throw std::runtime_error("Server was built without PostgreSQL support");
-    }
-    return std::make_unique<InMemoryRepository>();
-}
-
-std::unique_ptr<application::IBoardRuntimePersistence> make_runtime_persistence(
-    const ServerPersistenceConfig& config,
-    application::IBoardRepository& board_repository,
-    application::IBoardObjectRepository& object_repository,
-    application::IBoardOperationRepository& operation_repository) {
-    if (config.backend == PersistenceBackend::postgres) {
-        throw std::runtime_error("Server was built without PostgreSQL support");
-    }
-    return std::make_unique<persistence::InMemoryBoardRuntimePersistence>(
-        board_repository,
-        object_repository,
-        operation_repository);
-}
-#endif
-
-}  // namespace
-
 ServerState::ServerState(ServerPersistenceConfig config)
 #ifdef ONLINE_BOARD_HAS_POSTGRES
     : postgres_connection_provider_(
           config.backend == PersistenceBackend::postgres
               ? std::make_shared<persistence::PostgresConnectionProvider>(config.postgres_connection_string)
               : nullptr),
-      user_repository_(make_repository<
-                       application::IUserRepository,
-                       persistence::InMemoryUserRepository,
-                       persistence::PostgresUserRepository>(config, postgres_connection_provider_)),
-      session_repository_(make_repository<
-                          application::ISessionRepository,
-                          persistence::InMemorySessionRepository,
-                          persistence::PostgresSessionRepository>(config, postgres_connection_provider_)),
-      board_repository_(make_repository<
-                        application::IBoardRepository,
-                        persistence::InMemoryBoardRepository,
-                        persistence::PostgresBoardRepository>(config, postgres_connection_provider_)),
-      board_member_repository_(make_repository<
-                               application::IBoardMemberRepository,
-                               persistence::InMemoryBoardMemberRepository,
-                               persistence::PostgresBoardMemberRepository>(config, postgres_connection_provider_)),
-      board_object_repository_(make_repository<
-                               application::IBoardObjectRepository,
-                               persistence::InMemoryBoardObjectRepository,
-                               persistence::PostgresBoardObjectRepository>(config, postgres_connection_provider_)),
-      board_operation_repository_(make_repository<
-                                  application::IBoardOperationRepository,
-                                  persistence::InMemoryBoardOperationRepository,
-                                  persistence::PostgresBoardOperationRepository>(config, postgres_connection_provider_)),
-      board_runtime_persistence_(make_runtime_persistence(
-          config,
-          postgres_connection_provider_,
-          *board_repository_,
-          *board_object_repository_,
-          *board_operation_repository_)),
-#else
-    : user_repository_(make_repository<application::IUserRepository, persistence::InMemoryUserRepository>(config)),
-      session_repository_(make_repository<application::ISessionRepository, persistence::InMemorySessionRepository>(config)),
-      board_repository_(make_repository<application::IBoardRepository, persistence::InMemoryBoardRepository>(config)),
+      in_memory_storage_(
+          config.backend == PersistenceBackend::in_memory
+              ? std::make_shared<persistence::InMemoryStorage>()
+              : nullptr),
+      user_repository_(
+          config.backend == PersistenceBackend::postgres
+              ? std::unique_ptr<application::IUserRepository>(
+                    std::make_unique<persistence::PostgresUserRepository>(postgres_connection_provider_))
+              : std::unique_ptr<application::IUserRepository>(
+                    std::make_unique<persistence::InMemoryUserRepository>(in_memory_storage_))),
+      session_repository_(
+          config.backend == PersistenceBackend::postgres
+              ? std::unique_ptr<application::ISessionRepository>(
+                    std::make_unique<persistence::PostgresSessionRepository>(postgres_connection_provider_))
+              : std::unique_ptr<application::ISessionRepository>(
+                    std::make_unique<persistence::InMemorySessionRepository>(in_memory_storage_))),
+      board_repository_(
+          config.backend == PersistenceBackend::postgres
+              ? std::unique_ptr<application::IBoardRepository>(
+                    std::make_unique<persistence::PostgresBoardRepository>(postgres_connection_provider_))
+              : std::unique_ptr<application::IBoardRepository>(
+                    std::make_unique<persistence::InMemoryBoardRepository>(in_memory_storage_))),
       board_member_repository_(
-          make_repository<application::IBoardMemberRepository, persistence::InMemoryBoardMemberRepository>(config)),
+          config.backend == PersistenceBackend::postgres
+              ? std::unique_ptr<application::IBoardMemberRepository>(
+                    std::make_unique<persistence::PostgresBoardMemberRepository>(postgres_connection_provider_))
+              : std::unique_ptr<application::IBoardMemberRepository>(
+                    std::make_unique<persistence::InMemoryBoardMemberRepository>(in_memory_storage_))),
       board_object_repository_(
-          make_repository<application::IBoardObjectRepository, persistence::InMemoryBoardObjectRepository>(config)),
-      board_operation_repository_(make_repository<
-                                  application::IBoardOperationRepository,
-                                  persistence::InMemoryBoardOperationRepository>(config)),
-      board_runtime_persistence_(make_runtime_persistence(
-          config,
-          *board_repository_,
-          *board_object_repository_,
-          *board_operation_repository_)),
+          config.backend == PersistenceBackend::postgres
+              ? std::unique_ptr<application::IBoardObjectRepository>(
+                    std::make_unique<persistence::PostgresBoardObjectRepository>(postgres_connection_provider_))
+              : std::unique_ptr<application::IBoardObjectRepository>(
+                    std::make_unique<persistence::InMemoryBoardObjectRepository>(in_memory_storage_))),
+      board_operation_repository_(
+          config.backend == PersistenceBackend::postgres
+              ? std::unique_ptr<application::IBoardOperationRepository>(
+                    std::make_unique<persistence::PostgresBoardOperationRepository>(postgres_connection_provider_))
+              : std::unique_ptr<application::IBoardOperationRepository>(
+                    std::make_unique<persistence::InMemoryBoardOperationRepository>(in_memory_storage_))),
+      board_lifecycle_persistence_(
+          config.backend == PersistenceBackend::postgres
+              ? std::unique_ptr<application::IBoardLifecyclePersistence>(
+                    std::make_unique<persistence::PostgresBoardLifecyclePersistence>(postgres_connection_provider_))
+              : std::unique_ptr<application::IBoardLifecyclePersistence>(
+                    std::make_unique<persistence::InMemoryBoardLifecyclePersistence>(in_memory_storage_))),
+      board_runtime_persistence_(
+          config.backend == PersistenceBackend::postgres
+              ? std::unique_ptr<application::IBoardRuntimePersistence>(
+                    std::make_unique<persistence::PostgresBoardRuntimePersistence>(postgres_connection_provider_))
+              : std::unique_ptr<application::IBoardRuntimePersistence>(
+                    std::make_unique<persistence::InMemoryBoardRuntimePersistence>(in_memory_storage_))),
+#else
+    : in_memory_storage_(std::make_shared<persistence::InMemoryStorage>()),
+      user_repository_(std::make_unique<persistence::InMemoryUserRepository>(in_memory_storage_)),
+      session_repository_(std::make_unique<persistence::InMemorySessionRepository>(in_memory_storage_)),
+      board_repository_(std::make_unique<persistence::InMemoryBoardRepository>(in_memory_storage_)),
+      board_member_repository_(std::make_unique<persistence::InMemoryBoardMemberRepository>(in_memory_storage_)),
+      board_object_repository_(std::make_unique<persistence::InMemoryBoardObjectRepository>(in_memory_storage_)),
+      board_operation_repository_(std::make_unique<persistence::InMemoryBoardOperationRepository>(in_memory_storage_)),
+      board_lifecycle_persistence_(std::make_unique<persistence::InMemoryBoardLifecyclePersistence>(in_memory_storage_)),
+      board_runtime_persistence_(std::make_unique<persistence::InMemoryBoardRuntimePersistence>(in_memory_storage_)),
 #endif
       auth_service_(*user_repository_, *session_repository_, password_hasher_, token_generator_, id_generator_, clock_),
       operation_service_(board_access_service_, board_state_service_, clock_),
@@ -120,10 +83,16 @@ ServerState::ServerState(ServerPersistenceConfig config)
           *board_member_repository_,
           *board_object_repository_,
           *board_operation_repository_,
+          *board_lifecycle_persistence_,
           board_access_service_,
           id_generator_,
           password_hasher_,
           clock_) {
+#ifndef ONLINE_BOARD_HAS_POSTGRES
+    if (config.backend == PersistenceBackend::postgres) {
+        throw std::runtime_error("Server was built without PostgreSQL support");
+    }
+#endif
 }
 
 void ServerState::subscribe(const common::BoardId& board_id, const std::shared_ptr<ClientSession>& session) {
@@ -186,6 +155,7 @@ void ServerState::broadcast_presence(const common::BoardId& board_id, const std:
 
 void ServerState::close_board(const common::BoardId& board_id, ClientSession* initiator) {
     board_registry_.remove(board_id);
+    board_access_coordinator_.forget(board_id);
 
     std::vector<std::shared_ptr<ClientSession>> subscribers;
     {
@@ -233,6 +203,10 @@ application::IBoardOperationRepository& ServerState::board_operation_repository(
     return *board_operation_repository_;
 }
 
+application::IBoardLifecyclePersistence& ServerState::board_lifecycle_persistence() noexcept {
+    return *board_lifecycle_persistence_;
+}
+
 application::IBoardRuntimePersistence& ServerState::board_runtime_persistence() noexcept {
     return *board_runtime_persistence_;
 }
@@ -259,6 +233,10 @@ application::PresenceService& ServerState::presence_service() noexcept {
 
 runtime::BoardRegistry& ServerState::board_registry() noexcept {
     return board_registry_;
+}
+
+BoardAccessCoordinator& ServerState::board_access_coordinator() noexcept {
+    return board_access_coordinator_;
 }
 
 }  // namespace online_board::server

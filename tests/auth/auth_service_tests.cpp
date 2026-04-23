@@ -75,6 +75,41 @@ TEST(AuthServiceTests, LoginCreatesNewSessionForExistingUser) {
     EXPECT_EQ(common::value(result).session.user_id.value, "user-1");
 }
 
+TEST(AuthServiceTests, RegisterRejectsDuplicateLogin) {
+    using namespace online_board;
+
+    persistence::InMemoryUserRepository user_repository;
+    persistence::InMemorySessionRepository session_repository;
+    FakePasswordHasher hasher;
+    SequentialTokenGenerator token_generator;
+    SequentialIdGenerator id_generator;
+    FakeClock clock;
+
+    application::AuthService service(
+        user_repository,
+        session_repository,
+        hasher,
+        token_generator,
+        id_generator,
+        clock);
+
+    auto first = service.register_user({
+        .login = "alice",
+        .display_name = "Alice",
+        .password = "secret",
+    });
+    ASSERT_TRUE(common::is_ok(first));
+
+    auto second = service.register_user({
+        .login = "alice",
+        .display_name = "Alice Again",
+        .password = "secret-2",
+    });
+
+    ASSERT_FALSE(common::is_ok(second));
+    EXPECT_EQ(common::error(second).code, common::ErrorCode::already_exists);
+}
+
 TEST(AuthServiceTests, GuestEnterCreatesGuestSessionAndPrincipal) {
     using namespace online_board;
 

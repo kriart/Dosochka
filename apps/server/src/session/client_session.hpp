@@ -17,6 +17,7 @@ public:
     ClientSession(boost::asio::ip::tcp::socket socket, ServerState& state);
 
     void start();
+    void stop();
     void send_json(std::string json_message);
     void on_board_deleted(const common::BoardId& board_id);
 
@@ -45,6 +46,7 @@ private:
     void set_guest_principal(const application::GuestEnterResponse& response);
     void send_error(const common::Error& error);
     void leave_current_board();
+    void handle_board_deleted(const common::BoardId& board_id);
     void cleanup();
 
     tcp::socket socket_;
@@ -57,6 +59,7 @@ private:
     std::optional<common::BoardId> joined_board_id_;
     std::optional<domain::BoardRole> joined_role_;
     std::shared_ptr<runtime::BoardRuntimeManager> runtime_;
+    bool stopped_ {false};
 };
 
 }  // namespace online_board::server
